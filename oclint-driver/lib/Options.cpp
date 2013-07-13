@@ -6,9 +6,14 @@
 
 #include "llvm/Support/YAMLParser.h"
 #include "llvm/Support/YAMLTraits.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
 
+#include "oclint/Debug.h"
 #include "oclint/Options.h"
 #include "oclint/RuleConfiguration.h"
+
+using namespace oclint;
 
 /* ----------------
    input and output
@@ -97,6 +102,7 @@ struct llvm::yaml::MappingTraits<RuleConfigurationPair>
 
 struct ConfigFile
 {
+    llvm::OwningPtr<llvm::MemoryBuffer> buffer;
     std::string path;
     std::vector<llvm::StringRef> rules;
     std::vector<llvm::StringRef> disableRules;
@@ -124,8 +130,33 @@ struct llvm::yaml::MappingTraits<ConfigFile>
 
 static oclint::RulesetFilter filter;
 
+static ConfigFile readConfigFromFile(const std::string &path)
+{
+    debug::emit("Reading config file: ");
+    debug::emit(path.c_str());
+
+    ConfigFile configFile;
+    configFile.path = path;
+
+    llvm::OwningPtr<llvm::MemoryBuffer> buffer;
+    llvm::error_code ec = llvm::MemoryBuffer::getFile(path, configFile.buffer);
+    if (ec)
+    {
+        debug::emit(ec.message().c_str());
+        debug::emit("\n");
+    }
+    else
+    {
+        llvm::yaml::Input yin(configFile.buffer->getBuffer());
+        yin >> configFile;
+    }
+    return configFile;
+}
+
 void oclint::option::process()
 {
+    readConfigFromFile(".oclint");
+
     for (unsigned i = 0; i < argRuleConfiguration.size(); ++i)
     {
         std::string configuration = argRuleConfiguration[i];
