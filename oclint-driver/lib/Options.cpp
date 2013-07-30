@@ -4,8 +4,12 @@
 #include <clang/Driver/Options.h>
 #include <clang/Tooling/CommonOptionsParser.h>
 
+#include "oclint/ConfigFile.h"
+#include "oclint/Debug.h"
 #include "oclint/Options.h"
 #include "oclint/RuleConfiguration.h"
+
+using namespace oclint;
 
 /* ----------------
    input and output
@@ -74,10 +78,51 @@ static llvm::cl::extrahelp MoreHelp(
 );
 static llvm::OwningPtr<llvm::opt::OptTable> Options(clang::driver::createDriverOptTable());
 
+/* -------
+   options
+   ------- */
+
 static oclint::RulesetFilter filter;
+
+template <typename T>
+void updateArgIfSet(llvm::cl::opt<T> &argValue, const llvm::Optional<T> &configValue)
+{
+    if (configValue.hasValue() && argValue.getNumOccurrences() == 0)
+    {
+        argValue.setValue(configValue.getValue());
+    }
+}
+
+static void processConfigFile(const oclint::option::ConfigFile &config)
+{
+    for (const oclint::option::RuleConfigurationPair &ruleConfig : config.ruleConfigurations())
+    {
+        oclint::RuleConfiguration::addConfiguration(ruleConfig.key(), ruleConfig.value());
+    }
+    for (const llvm::StringRef &rulePath : config.rulePaths())
+    {
+        argRulesPath.push_back(rulePath.str());
+    }
+    filter.enableRules(config.rules().begin(), config.rules().end());
+    filter.disableRules(config.disableRules().begin(), config.disableRules().end());
+
+    updateArgIfSet(argOutput, config.output());
+    updateArgIfSet(argReportType, config.reportType());
+    updateArgIfSet(argMaxP1, config.maxP1());
+    updateArgIfSet(argMaxP2, config.maxP2());
+    updateArgIfSet(argMaxP3, config.maxP3());
+    updateArgIfSet(argClangChecker, config.clangChecker());
+}
+
+static void processConfigFiles()
+{
+    const std::vector<oclint::option::ConfigFile> configFiles = oclint::option::readConfigFiles();
+    for_each(configFiles.begin(), configFiles.end(), processConfigFile);
+}
 
 void oclint::option::process()
 {
+    processConfigFiles();
     for (unsigned i = 0; i < argRuleConfiguration.size(); ++i)
     {
         std::string configuration = argRuleConfiguration[i];
@@ -88,10 +133,8 @@ void oclint::option::process()
         oclint::RuleConfiguration::addConfiguration(key, value);
     }
 
-    filter.setEnabledRules(
-        std::vector<std::string>(argEnabledRules.begin(), argEnabledRules.end()));
-    filter.setDisabledRules(
-        std::vector<std::string>(argDisabledRules.begin(), argDisabledRules.end()));
+    filter.enableRules(argEnabledRules.begin(), argEnabledRules.end());
+    filter.disableRules(argDisabledRules.begin(), argDisabledRules.end());
 }
 
 bool oclint::option::hasOutputPath()
